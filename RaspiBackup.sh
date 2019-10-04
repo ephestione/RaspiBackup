@@ -424,9 +424,6 @@ then
 	exit
 fi
 
-# there should be a check here to see if root partuuid in /boot/cmdline.txt is consistent with currently mounted rootfs
-# if not, there's the chance it's an incomplete rootfs migration where boot partuuid in /etc/fstab was not corrected
-
 SIZE=$(blockdev --getsz $ROOT)
 BLOCKSIZE=$(blockdev --getss $ROOT)
 ((SIZE=SIZE + BOOTSIZE*1024*1024/BLOCKSIZE))
