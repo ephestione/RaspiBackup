@@ -417,6 +417,12 @@ BOOTPU=`expr "$(grep '/boot ' /etc/fstab)" : 'PARTUUID=\(.[a-z0-9\-]*\)'`
 BOOT=/dev/disk/by-partuuid/$BOOTPU
 ROOTPU=`expr "$(grep '/ ' /etc/fstab)" : 'PARTUUID=\(.[a-z0-9\-]*\)'`
 ROOT=/dev/disk/by-partuuid/$ROOTPU
+ROOTCMD=$(grep "^[^#;]" /boot/cmdline.txt | grep -o -E "PARTUUID=[0-9a-fA-F]+-[0-9a-fA-F]+" | grep -o -E "[0-9a-fA-F]+-[0-9a-fA-F]+")
+if [ $ROOTPU != $ROOTCMD ]
+then
+	echo "PARTUUID for rootfs is not the same between /boot/cmdline.txt and /etc/fstab, this might mean you are mounting the wrong partition as /boot; fix this and then retry"
+	exit
+fi
 
 # there should be a check here to see if root partuuid in /boot/cmdline.txt is consistent with currently mounted rootfs
 # if not, there's the chance it's an incomplete rootfs migration where boot partuuid in /etc/fstab was not corrected
