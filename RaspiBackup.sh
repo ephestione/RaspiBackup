@@ -21,6 +21,8 @@
 #
 # Size of bootpartiotion in MB
 BOOTSIZE=250
+# Free space to leave in root partition image after shrinking
+ROOTFREE=100
 
 setup () {
 	#
@@ -425,8 +427,17 @@ then
 fi
 
 SIZE=$(blockdev --getsz $ROOT)
+# calc kilobytes size of data on rootfs
+AVAILROOT=$(df / --output=avail | tail -n1)
+SIZEROOT=$(df / --output=size | tail -n1)
+((USEDROOT=SIZEROOT-AVAILROOT))
+# bytes size of backup rootfs including free space after data
+((USEDROOT=USEDROOT*1024 + ROOTFREE*1024*1024))
+
 BLOCKSIZE=$(blockdev --getss $ROOT)
-((SIZE=SIZE + BOOTSIZE*1024*1024/BLOCKSIZE))
+# blocks count of rootfs round up division result:
+((SIZE=(USEDROOT+BLOCKSIZE-1)/BLOCKSIZE + BOOTSIZE*1024*1024/BLOCKSIZE))
+#((SIZE=SIZE + BOOTSIZE*1024*1024/BLOCKSIZE))
 
 # Read the sdimage path from command line
 IMAGE=${1}
