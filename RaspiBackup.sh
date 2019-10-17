@@ -18,7 +18,6 @@
 #
 #
 # Defaults
-SDCARD=/dev/mmcblk0
 #
 # Size of bootpartiotion in MB
 BOOTSIZE=250
@@ -76,7 +75,7 @@ do_create () {
 BOOTSIZE=${BOOTSIZE:-250}
 
 
-	trace "Creating sparse "${IMAGE}", the apparent size of $SDCARD"
+	trace "Creating sparse "${IMAGE}", the apparent size of $ROOT + ${BOOTSIZE}MB for /boot"
 	dd if=/dev/zero of="${IMAGE}" bs=${BLOCKSIZE} count=0 seek=${SIZE}
 
 	if [ -s "${IMAGE}" ]; then
@@ -121,30 +120,32 @@ change_bootenv () {
 	
 	for ((p = 1; p <= 2; p++))
 	do
-		srcpartuuid[${p}]=$(lsblk -n -o PARTUUID "${SDCARD}${SUFFIX}${p}") || {
-			trace "Could not find PARTUUID of ${SDCARD}${SUFFIX}${p}"
-			editmanual=true
-		}
-		#echo "srcpartuuid[${p}] ${srcpartuuid[${p}]}"
 		dstpartuuid[${p}]=$(lsblk -n -o PARTUUID "${LOOPBACK}p${p}") || {
 			trace "Could not find PARTUUID of ${LOOPBACK}p${p}"
 			editmanual=true
 			} 
-		#echo "dstpartuuid[${p}] ${dstpartuuid[${p}]}"
 		
-		grep -q "PARTUUID=${srcpartuuid[${p}]}" $fstab_tmp && {
-			trace "changing PARTUUID from ${srcpartuuid[${p}]} to ${dstpartuuid[${p}]} in $fstab_tmp"
-			sed -i "s/PARTUUID=${srcpartuuid[${p}]}/PARTUUID=${dstpartuuid[${p}]}/" $fstab_tmp||{
-				trace "PARTUUID ${dstpartuuid[2]} has not been changed in  $fstab_tmp"
-				editmanual=true
-			}
-				
-		}||{
-			trace "PARTUUID=${srcpartuuid[${p}]} not found in $fstab_tmp"
+	done
+	
+	#need to clean up the following, it's ugly right now but I'm lazy to do it procedurally :P
+	
+	grep -q "PARTUUID=${BOOTPU}" $fstab_tmp && {
+		trace "changing PARTUUID from ${BOOTPU} to ${dstpartuuid[1]} in $fstab_tmp"
+		sed -i "s/PARTUUID=${BOOTPU}/PARTUUID=${dstpartuuid[1]}/" $fstab_tmp||{
+			trace "PARTUUID ${dstpartuuid[1]} has not been changed in  $fstab_tmp"
 			editmanual=true
 		}
+			
+	}
+	grep -q "PARTUUID=${ROOTPU}" $fstab_tmp && {
+		trace "changing PARTUUID from ${ROOTPU} to ${dstpartuuid[2]} in $fstab_tmp"
+		sed -i "s/PARTUUID=${ROOTPU}/PARTUUID=${dstpartuuid[2]}/" $fstab_tmp||{
+			trace "PARTUUID ${dstpartuuid[2]} has not been changed in  $fstab_tmp"
+			editmanual=true
+		}
+			
+	}
 
-	done
 	
 	if ${editmanual}
 	then
@@ -165,13 +166,13 @@ change_bootenv () {
 		editmanual=true
 		}
 	grep -q "PARTUUID=${srcpartuuid[2]}" $cmdline_tmp && {
-			trace "changing PARTUUID from ${srcpartuuid[2]} to ${dstpartuuid[2]} in $cmdline_tmp"
-			sed -i "s/PARTUUID=${srcpartuuid[2]}/PARTUUID=${dstpartuuid[2]}/" $cmdline_tmp||{
+			trace "changing PARTUUID from ${ROOTPU} to ${dstpartuuid[2]} in $cmdline_tmp"
+			sed -i "s/PARTUUID=${ROOTPU}/PARTUUID=${dstpartuuid[2]}/" $cmdline_tmp||{
 				trace "PARTUUID ${dstpartuuid[2]} as not been changed in $cmdline_tmp"
 				editmanual=true
 			}
 		}||{
-				trace "PARTUUID ${srcpartuuid[2]} not found in  $cmdline_tmp"
+				trace "PARTUUID ${ROOTPU} not found in  $cmdline_tmp"
 				editmanual=true
 		}
 	
@@ -183,29 +184,6 @@ change_bootenv () {
 		cp $cmdline_tmp ${MOUNTDIR}/boot/cmdline.txt
 		success "changing PARTUUID in cmdline.txt successful"
 	fi 
-}
-
-do_cloneid () {
-	# Check if do_create already attached the SD Image
-	if [ $(losetup -f) = ${LOOPBACK} ]; then
-		trace "Attaching ${IMAGE} to ${LOOPBACK}"
-		losetup ${LOOPBACK} "${IMAGE}"
-		partx --add ${LOOPBACK}
-	fi
-	clone
-	partx --delete ${LOOPBACK}
-	losetup -d ${LOOPBACK}
-}
-
-clone () {
-	# cloning UUID and PARTUUID
-	UUID=$(blkid -s UUID -o value ${SDCARD}p2)
-	PTUUID=$(blkid -s PTUUID -o value ${SDCARD})
-	e2fsck -f -y ${LOOPBACK}p2
-	echo y|tune2fs ${LOOPBACK}p2 -U $UUID
-	printf 'p\nx\ni\n%s\nr\np\nw\n' 0x${PTUUID}|fdisk "${LOOPBACK}"
-	sync
-	
 }
 
 # Mounts the ${IMAGE} to ${LOOPBACK} (if needed) and ${MOUNTDIR}
@@ -226,7 +204,7 @@ do_mount () {
 	mount ${LOOPBACK}p1 ${MOUNTDIR}/boot
 }
 
-# Rsyncs content of ${SDCARD} to ${IMAGE} if properly mounted
+# Rsyncs content of source to ${IMAGE} if properly mounted
 do_backup () {
 
 	local rsyncopt
@@ -317,6 +295,8 @@ do_compress () {
 # Tries to cleanup after Ctrl-C interrupt
 ctrl_c () {
 	trace "Ctrl-C detected."
+	
+	#need to remove mountpoint in here!
 
 	if [ -s "${IMAGE}.gz.tmp" ]; then
 		rm "${IMAGE}.gz.tmp"
@@ -349,7 +329,6 @@ cat<<EOF
 	        ${BOLD}mount${NOATT}      mounts the 'sdimage' to 'mountdir' (default: /mnt/'sdimage'/)
 	        ${BOLD}umount${NOATT}     unmounts the 'sdimage' from 'mountdir'
 	        ${BOLD}gzip${NOATT}       compresses the 'sdimage' to 'sdimage'.gz
-	        ${BOLD}cloneid${NOATT}    clones the UUID/PTUUID from the current disk to the image
 	        ${BOLD}chbootenv${NOATT}  changes PARTUUID entries in fstab and cmdline.txt in the image
 	        ${BOLD}showdf${NOATT}     shows allocation of the image
 	        ${BOLD}resize${NOATT}     add 1G to the image
@@ -394,7 +373,7 @@ setup
 # Read the command from command line
 case "${1}" in
 	
-	start|mount|umount|gzip|cloneid|chbootenv|showdf) opt_command=${1}
+	start|mount|umount|gzip|chbootenv|showdf) opt_command=${1}
 	;;
 		
 		
@@ -423,7 +402,6 @@ while getopts ":czdflL:i:s:" opt; do
 		l)  opt_log=1;;
 		L)  opt_log=1
 			LOG=${OPTARG};;
-		i)  SDCARD=${OPTARG};;
 		s)  SIZE=${OPTARG}
 			BLOCKSIZE=1M ;;
 		\?) error "Invalid option: -${OPTARG}\nSee '${MYNAME} --help' for usage";;
@@ -434,15 +412,21 @@ shift $((OPTIND-1))
 #
 # setting defaults if -i or -s is ommitted
 #
-SDCARD=${SDCARD:-"/dev/mmcblk0"}
-SIZE=${SIZE:-$(blockdev --getsz $SDCARD)}
-BLOCKSIZE=${BLOCKSIZE:-$(blockdev --getss $SDCARD)}
-case "${SDCARD}" in
-	"/dev/mmc"*) SUFFIX="p";;
-	"/dev/sd"*)  SUFFIX="";;
-	"/dev/disk/by-id/"*) SUFFIX="-part";;
-	*) SUFFIX="p";;
-esac
+
+BOOTPU=`expr "$(grep '/boot ' /etc/fstab)" : 'PARTUUID=\(.[a-z0-9\-]*\)'`
+BOOT=/dev/disk/by-partuuid/$BOOTPU
+ROOTPU=`expr "$(grep '/ ' /etc/fstab)" : 'PARTUUID=\(.[a-z0-9\-]*\)'`
+ROOT=/dev/disk/by-partuuid/$ROOTPU
+ROOTCMD=$(grep "^[^#;]" /boot/cmdline.txt | grep -o -E "PARTUUID=[0-9a-fA-F]+-[0-9a-fA-F]+" | grep -o -E "[0-9a-fA-F]+-[0-9a-fA-F]+")
+if [ $ROOTPU != $ROOTCMD ]
+then
+	echo "PARTUUID for rootfs is not the same between /boot/cmdline.txt and /etc/fstab, this might mean you are mounting the wrong partition as /boot; fix this and then retry"
+	exit
+fi
+
+SIZE=$(blockdev --getsz $ROOT)
+BLOCKSIZE=$(blockdev --getss $ROOT)
+((SIZE=SIZE + BOOTSIZE*1024*1024/BLOCKSIZE))
 
 # Read the sdimage path from command line
 IMAGE=${1}
@@ -553,23 +537,6 @@ case ${opt_command} in
 			;;
 	gzip)
 			do_compress
-			;;
-	cloneid)
-			cat<<EOF
-	${YELLOW}
-	While cloneid still works, you may consider to adapt /boot/cmdline.txt and /etc/fstab.
-	${MYNAME} will assist you by using the ${BOLD}chbootenv${NOATT}${YELLOW} option.
-
-EOF
-			while true
-			do
-				read -p "Do you really wish to use cloneid? (y/n)" yn
-				case $yn in
-					[Yy]* ) do_cloneid; break;;
-					[Nn]* ) exit;;
-					* ) echo "Please answer yes or no.";;
-				esac
-			done
 			;;
 	chbootenv)
 			do_mount
