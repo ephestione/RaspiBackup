@@ -68,7 +68,7 @@ RaspiBackup.sh showdf /path/to/backup.img
 ### Pros of this version
 
 * No need to specify the source device(s) (also supports systems where /boot is on SD and / is on USB drive)
-* Image size is shrinked to the minimum needed space, you can configure a larger free space on destination image by editing `BOOTFREE` variable in the script
+* Image size is shrinked to the minimum needed space, you can configure a larger free space on destination image by editing `ROOTFREE` variable in the script
 
 ### Caveat:
 
