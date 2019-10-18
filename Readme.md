@@ -67,9 +67,8 @@ RaspiBackup.sh showdf /path/to/backup.img
 
 ### Pros of this version
 
-The script doesn't require you to specify a source device. This is useful when the system is on a different device from the SD card, so either all on a pendrive/external disk, or with /boot on the SD card, and / on the USB device.
-The code will extract PARTUUID's from /etc/fstab, and use those to correctly identify the underlying devices (so keep your /etc/fstab current).
-Another useful benefit, is that the size of the image will be calculated as the real size of data on root partition (not the size of the whole device... like 30GB for a pendrive where only 4GB worth of root partition resides), plus 100MB of free space (configurabile from insie the script), plus 256MB which is the recommended /boot size by the RPi Foundation.
+* No need to specify the source device(s) (also supports systems where /boot is on SD and / is on USB drive)
+* Image size is shrinked to the minimum needed space, you can configure a larger free space on destination image by editing `BOOTFREE` variable in the script
 
 ### Caveat:
 
