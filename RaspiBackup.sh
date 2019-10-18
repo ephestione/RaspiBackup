@@ -22,7 +22,7 @@
 # Size of bootpartiotion in MB
 BOOTSIZE=250
 # Free space to leave in root partition image after shrinking
-ROOTFREE=100
+ROOTFREE=10
 
 setup () {
 	#
@@ -77,7 +77,7 @@ do_create () {
 BOOTSIZE=${BOOTSIZE:-250}
 
 
-	trace "Creating sparse "${IMAGE}", the apparent size of $ROOT + ${BOOTSIZE}MB for /boot"
+	trace "Creating sparse image "${IMAGE}", the apparent size of rootfs $ROOT + free space ${ROOTFREE}MB + ${BOOTSIZE}MB for /boot"
 	dd if=/dev/zero of="${IMAGE}" bs=${BLOCKSIZE} count=0 seek=${SIZE}
 
 	if [ -s "${IMAGE}" ]; then
@@ -426,18 +426,21 @@ then
 	exit
 fi
 
-SIZE=$(blockdev --getsz $ROOT)
-# calc kilobytes size of data on rootfs
-AVAILROOT=$(df / --output=avail | tail -n1)
-SIZEROOT=$(df / --output=size | tail -n1)
-((USEDROOT=SIZEROOT-AVAILROOT))
-# bytes size of backup rootfs including free space after data
-((USEDROOT=USEDROOT*1024 + ROOTFREE*1024*1024))
+# Determine percentage of reserved blocks on rootfs
+BTOT=$(tune2fs -l $ROOT | grep "Block count:" | grep -o -E [0-9]*)
+#BRES=$(tune2fs -l $ROOT | grep "Reserved block count:" | grep -o -E [0-9]*)
+#((BPER=BRES*100/BTOT))
+#((USEDROOT=(USEDROOT*1024 + ROOTFREE*1024*1024)*((BTOT+BRES)*100)/BTOT/100))
 
 BLOCKSIZE=$(blockdev --getss $ROOT)
-# blocks count of rootfs round up division result:
+((TOTPART=BTOT*4096))
+SIZEROOT=$(df / --output=size | tail -n1)
+((SIZEROOT=SIZEROOT*1024))
+AVAILROOT=$(df / --output=avail | tail -n1)
+((AVAILROOT=AVAILROOT*1024))
+((USEDROOT=((TOTPART-AVAILROOT)*96-1)/100))
+((USEDROOT=((USEDROOT+ROOTFREE*1024*1024)*106-1)/100)) #round up as above, and additional free space needs to be added before 5% increase is done
 ((SIZE=(USEDROOT+BLOCKSIZE-1)/BLOCKSIZE + BOOTSIZE*1024*1024/BLOCKSIZE))
-#((SIZE=SIZE + BOOTSIZE*1024*1024/BLOCKSIZE))
 
 # Read the sdimage path from command line
 IMAGE=${1}
